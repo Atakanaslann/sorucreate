@@ -1,66 +1,45 @@
 import "server-only";
-import { promises as fs } from "fs";
-import path from "path";
-import { randomUUID } from "crypto";
 import { dersBul } from "@/data/curriculum";
 import { ornekSorular } from "@/data/seed";
+import { backend } from "./backend";
 import { fingerprint, jaccard, BENZERLIK_ESIGI } from "./similarity";
 import type { Soru, SoruFiltre, SoruIcerik, Sinav, Geribildirim } from "./types";
 
 /**
- * Faz 1 veri katmanı: tek bir JSON dosyası. Arayüz bu modülün fonksiyonlarını
- * kullanır; Faz 2'de aynı imzalarla Supabase'e taşınacak.
+ * Soru havuzu işlemleri. Depolama `backend()` ile seçilir:
+ * SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY tanımlıysa Supabase, yoksa data/pool.json.
  */
 
-interface DB {
-  sayaclar: Record<string, number>;
-  sorular: Soru[];
+let tohumlandi = false;
+async function tumu(): Promise<Soru[]> {
+  const b = backend();
+  const list = await b.all();
+  if (list.length || tohumlandi) return list;
+  tohumlandi = true;
+  const ornek = ornekSorular();
+  const ids = await yeniIdler(ornek.map((s) => ({ sinav: s.sinav, ders: s.ders })));
+  const yeni = ornek.map((s, i) => ({ ...s, id: ids[i] }));
+  await b.save(yeni);
+  return yeni;
 }
 
-const DATA_DIR = process.env.SORUCREATE_DATA_DIR ?? path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "pool.json");
-
-let queue: Promise<unknown> = Promise.resolve();
-function locked<T>(fn: () => Promise<T>): Promise<T> {
-  const run = queue.then(fn, fn);
-  queue = run.catch(() => undefined);
-  return run;
-}
-
-async function load(): Promise<DB> {
-  try {
-    return JSON.parse(await fs.readFile(DB_PATH, "utf8")) as DB;
-  } catch {
-    const db: DB = { sayaclar: {}, sorular: [] };
-    for (const s of ornekSorular()) {
-      const { id, ...rest } = s;
-      void id;
-      db.sorular.push({ ...rest, id: nextId(db, s.sinav, s.ders) } as Soru);
-    }
-    await save(db);
-    return db;
+async function yeniIdler(items: { sinav: Sinav; ders: string }[]) {
+  const gruplar = new Map<string, number[]>();
+  items.forEach((it, i) => {
+    const key = `${it.sinav}-${dersBul(it.sinav, it.ders)?.kisa ?? "GEN"}`;
+    gruplar.set(key, [...(gruplar.get(key) ?? []), i]);
+  });
+  const ids: string[] = new Array(items.length);
+  for (const [key, idx] of gruplar) {
+    const son = await backend().sayacArtir(key, idx.length);
+    idx.forEach((i, k) => (ids[i] = `SC-${key}-${String(son - idx.length + 1 + k).padStart(5, "0")}`));
   }
-}
-
-async function save(db: DB) {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  const tmp = `${DB_PATH}.${randomUUID()}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(db, null, 2), "utf8");
-  await fs.rename(tmp, DB_PATH);
-}
-
-function nextId(db: DB, sinav: Sinav, ders: string) {
-  const kisa = dersBul(sinav, ders)?.kisa ?? "GEN";
-  const key = `${sinav}-${kisa}`;
-  const n = (db.sayaclar[key] ?? 0) + 1;
-  db.sayaclar[key] = n;
-  return `SC-${key}-${String(n).padStart(5, "0")}`;
+  return ids;
 }
 
 export async function listQuestions(f: SoruFiltre = {}) {
-  const db = await load();
   const q = f.q?.toLocaleLowerCase("tr-TR").trim();
-  return db.sorular
+  return (await tumu())
     .filter((s) => {
       if (f.sinav && s.sinav !== f.sinav) return false;
       if (f.ders && s.ders !== f.ders) return false;
@@ -81,8 +60,13 @@ export async function listQuestions(f: SoruFiltre = {}) {
 }
 
 export async function getQuestion(id: string) {
-  const db = await load();
-  return db.sorular.find((s) => s.id === id) ?? null;
+  await tumu();
+  return backend().get(id);
+}
+
+export async function getQuestions(ids: string[]) {
+  const all = await tumu();
+  return ids.map((id) => all.find((s) => s.id === id)).filter(Boolean) as Soru[];
 }
 
 export function findSimilar(sorular: Soru[], cand: Pick<Soru, "kazanimKodu" | "parmakIzi" | "id">) {
@@ -94,9 +78,9 @@ export function findSimilar(sorular: Soru[], cand: Pick<Soru, "kazanimKodu" | "p
 }
 
 export async function similarTo(id: string) {
-  const db = await load();
-  const s = db.sorular.find((x) => x.id === id);
-  return s ? findSimilar(db.sorular, s) : [];
+  const all = await tumu();
+  const s = all.find((x) => x.id === id);
+  return s ? findSimilar(all, s) : [];
 }
 
 export type YeniSoru = Omit<
@@ -104,37 +88,32 @@ export type YeniSoru = Omit<
   "id" | "durum" | "surum" | "geribildirim" | "revizyonlar" | "parmakIzi" | "olusturma" | "guncelleme"
 >;
 
-export function createQuestions(items: YeniSoru[]) {
-  return locked(async () => {
-    const db = await load();
-    const now = new Date().toISOString();
-    const created: Soru[] = items.map((it) => ({
-      ...it,
-      id: nextId(db, it.sinav, it.ders),
-      durum: "taslak",
-      surum: 1,
-      geribildirim: [],
-      revizyonlar: [],
-      parmakIzi: fingerprint(it.senaryo, it.kok),
-      olusturma: now,
-      guncelleme: now,
-    }));
-    db.sorular.push(...created);
-    await save(db);
-    return created;
-  });
+export async function createQuestions(items: YeniSoru[]) {
+  if (!items.length) return [];
+  const ids = await yeniIdler(items);
+  const now = new Date().toISOString();
+  const created: Soru[] = items.map((it, i) => ({
+    ...it,
+    id: ids[i],
+    durum: "taslak",
+    surum: 1,
+    geribildirim: [],
+    revizyonlar: [],
+    parmakIzi: fingerprint(it.senaryo, it.kok),
+    olusturma: now,
+    guncelleme: now,
+  }));
+  await backend().save(created);
+  return created;
 }
 
-function mutate(id: string, fn: (s: Soru) => void) {
-  return locked(async () => {
-    const db = await load();
-    const s = db.sorular.find((x) => x.id === id);
-    if (!s) return null;
-    fn(s);
-    s.guncelleme = new Date().toISOString();
-    await save(db);
-    return s;
-  });
+async function mutate(id: string, fn: (s: Soru) => void) {
+  const s = await backend().get(id);
+  if (!s) return null;
+  fn(s);
+  s.guncelleme = new Date().toISOString();
+  await backend().save([s]);
+  return s;
 }
 
 export function addFeedback(id: string, g: Omit<Geribildirim, "tarih">) {
@@ -148,22 +127,18 @@ export function addFeedback(id: string, g: Omit<Geribildirim, "tarih">) {
 
 function snapshot(s: Soru, neden?: string) {
   const { senaryo, kok, secenekler, dogruCevap, cozum, beceri, gorsel } = s;
-  s.revizyonlar.push({
-    senaryo, kok, secenekler, dogruCevap, cozum, beceri, gorsel,
-    surum: s.surum, tarih: new Date().toISOString(), neden,
-  });
+  s.revizyonlar.push({ senaryo, kok, secenekler, dogruCevap, cozum, beceri, gorsel, surum: s.surum, tarih: new Date().toISOString(), neden });
 }
 
 /** İçeriği yeni sürümle değiştirir; eski sürüm geçmişe yazılır, ID değişmez. */
-export function reviseQuestion(id: string, icerik: SoruIcerik, neden?: string, model?: string) {
+export function reviseQuestion(id: string, icerik: SoruIcerik, neden?: string, model?: string, kaynak?: Soru["meta"]["kaynak"]) {
   return mutate(id, (s) => {
     snapshot(s, neden);
     Object.assign(s, icerik);
-    // Yüklenmiş görsel varsa ve yeni brif görsel taşıyorsa korunmaz: yeni brif = yeni görsel.
     s.surum += 1;
     s.durum = "taslak";
     s.parmakIzi = fingerprint(s.senaryo, s.kok);
-    if (model) s.meta = { ...s.meta, model };
+    if (model) s.meta = { ...s.meta, model, ...(kaynak ? { kaynak } : {}) };
   });
 }
 
@@ -188,17 +163,17 @@ export function setStatus(id: string, durum: Soru["durum"]) {
 
 export function setImage(id: string, url: string | undefined) {
   return mutate(id, (s) => {
-    if (!s.gorsel) return;
-    s.gorsel.url = url;
+    if (s.gorsel) s.gorsel.url = url;
   });
 }
 
 export async function stats() {
-  const db = await load();
-  const today = new Date().toISOString().slice(0, 10);
-  const aktif = db.sorular.filter((s) => s.durum !== "kaldirildi");
-  const bugun = db.sorular.filter((s) => s.olusturma.slice(0, 10) === today && s.meta.kaynak !== "ornek");
-  const count = <T extends string>(arr: Soru[], key: (s: Soru) => T) =>
+  const all = await tumu();
+  const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" });
+  const today = fmt.format(new Date());
+  const aktif = all.filter((s) => s.durum !== "kaldirildi");
+  const bugun = all.filter((s) => fmt.format(new Date(s.olusturma)) === today && s.meta.kaynak !== "ornek");
+  const count = (arr: Soru[], key: (s: Soru) => string) =>
     arr.reduce<Record<string, number>>((acc, s) => {
       const k = key(s);
       acc[k] = (acc[k] ?? 0) + 1;
@@ -207,7 +182,7 @@ export async function stats() {
   const nedenler: Record<string, number> = {};
   let olmus = 0;
   let olmamis = 0;
-  for (const s of db.sorular)
+  for (const s of all)
     for (const g of s.geribildirim) {
       if (g.karar === "olmus") olmus++;
       else {
@@ -217,14 +192,11 @@ export async function stats() {
     }
   return {
     toplam: aktif.length,
-    durum: count(db.sorular, (s) => s.durum),
-    sinav: count(aktif, (s) => s.sinav),
-    zorluk: count(aktif, (s) => s.zorluk),
-    tur: count(aktif, (s) => s.tur),
+    durum: count(all, (s) => s.durum),
     dersZorluk: count(aktif, (s) => `${s.sinav} ${s.ders}|${s.zorluk}`),
     bugun: { gorselli: bugun.filter((s) => s.tur === "gorselli").length, gorselsiz: bugun.filter((s) => s.tur === "gorselsiz").length },
     geribildirim: { olmus, olmamis, nedenler },
     kapsananKazanim: new Set(aktif.map((s) => `${s.sinav}|${s.kazanimKodu}`)).size,
-    son: [...db.sorular].sort((a, b) => b.guncelleme.localeCompare(a.guncelleme)).slice(0, 6),
+    son: [...all].sort((a, b) => b.guncelleme.localeCompare(a.guncelleme)).slice(0, 6),
   };
 }

@@ -30,7 +30,7 @@ function CopyBtn({ text, label = "Kopyala" }: { text: string; label?: string }) 
   );
 }
 
-export function QuestionDetail({ soru, benzerler, ai }: { soru: Soru; benzerler: { id: string; skor: number }[]; ai: boolean }) {
+export function QuestionDetail({ soru, benzerler }: { soru: Soru; benzerler: { id: string; skor: number }[]; ai: boolean }) {
   const router = useRouter();
   const deneme = useDeneme();
   const [cevap, setCevap] = useState(false);
@@ -41,6 +41,20 @@ export function QuestionDetail({ soru, benzerler, ai }: { soru: Soru; benzerler:
   const [mesaj, setMesaj] = useState<{ tur: "ok" | "uyari"; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [revPrompt, setRevPrompt] = useState<string | null>(null);
+  const [revIs, setRevIs] = useState<string | null>(null);
+
+  const isIzle = (isId: string) => {
+    setRevIs(isId);
+    setMesaj({ tur: "ok", text: "Claude soruyu revize ediyor… (aboneliğinle, ~1 dk). Sayfadan ayrılabilirsin." });
+    const t = setInterval(async () => {
+      const d = await fetch(`/api/jobs?id=${isId}`).then((r) => r.json()).catch(() => null);
+      if (!d?.is || d.is.durum === "kuyrukta" || d.is.durum === "calisiyor") return;
+      clearInterval(t);
+      setRevIs(null);
+      setMesaj(d.is.durum === "tamam" ? { tur: "ok", text: "Soru revize edildi. Yeni sürüm onayını bekliyor." } : { tur: "uyari", text: `Revizyon başarısız: ${d.is.hata}` });
+      router.refresh();
+    }, 3000);
+  };
 
   const manuelRevizyonAc = async () => {
     const r = await patch({ action: "revizyon_prompt" }, "rp");
@@ -84,7 +98,7 @@ export function QuestionDetail({ soru, benzerler, ai }: { soru: Soru; benzerler:
       setPanel(false);
       setNedenler([]);
       setNot("");
-      if (r.data.manuel) await manuelRevizyonAc();
+      if (r.data.is) isIzle(r.data.is.id);
       else if (!r.data.uyari) setMesaj({ tur: "ok", text: aksiyon === "kaldir" ? "Soru kaldırıldı. Arşivden geri alınabilir." : `Soru revize edildi (sürüm ${r.data.soru.surum}). Tekrar onayınızı bekliyor.` });
     }
   };
@@ -209,7 +223,7 @@ export function QuestionDetail({ soru, benzerler, ai }: { soru: Soru; benzerler:
               <dt className="text-muted">Kazanım</dt><dd><span className="font-mono text-xs font-semibold">{soru.kazanimKodu}</span><span className="mt-1 block text-ink-2">{soru.kazanimMetni}</span></dd>
               <dt className="text-muted">Beceri</dt><dd>{soru.beceri}</dd>
               <dt className="text-muted">Sürüm</dt><dd>v{soru.surum}</dd>
-              <dt className="text-muted">Kaynak</dt><dd>{soru.meta.kaynak === "claude" ? `Claude (${soru.meta.model})` : soru.meta.kaynak === "ornek" ? "Örnek soru" : `Sohbet aracı (${soru.meta.model ?? "manuel"})`}</dd>
+              <dt className="text-muted">Kaynak</dt><dd>{soru.meta.kaynak === "claude" ? `Claude (${soru.meta.model})` : soru.meta.kaynak === "ornek" ? "Örnek soru" : soru.meta.kaynak === "abonelik" ? `Claude aboneliği (${soru.meta.model})` : `Sohbet aracı (${soru.meta.model ?? "manuel"})`}</dd>
             </dl>
             <div className="mt-4 flex flex-wrap gap-1.5"><ZorlukBadge zorluk={soru.zorluk} /><TurBadge tur={soru.tur} /></div>
           </section>
@@ -311,15 +325,23 @@ export function QuestionDetail({ soru, benzerler, ai }: { soru: Soru; benzerler:
                 <button className="btn" disabled={!!busy} onClick={() => patch({ action: "geri_al" }, "geri")}><RotateCcw size={16} /> Geri al</button>
               ) : (
                 <>
-                  {soru.durum === "revizyonda" && (ai ? (
-                    <button className="btn" disabled={!!busy} onClick={() => patch({ action: "ai_revize" }, "ai")}>
-                      {busy === "ai" ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />} AI ile revize et
-                    </button>
-                  ) : (
-                    <button className="btn" disabled={!!busy} onClick={manuelRevizyonAc}>
-                      {busy === "rp" ? <Loader2 size={16} className="animate-spin" /> : <MessagesSquare size={16} />} Sohbet aracıyla revize et
-                    </button>
-                  ))}
+                  {soru.durum === "revizyonda" && (
+                    <>
+                      <button className="btn" title="Kopyala-yapıştır ile revize et" disabled={!!busy || !!revIs} onClick={manuelRevizyonAc}>
+                        {busy === "rp" ? <Loader2 size={16} className="animate-spin" /> : <MessagesSquare size={16} />}
+                      </button>
+                      <button
+                        className="btn"
+                        disabled={!!busy || !!revIs}
+                        onClick={async () => {
+                          const r = await patch({ action: "ai_revize" }, "ai");
+                          if (r.data?.is) isIzle(r.data.is.id);
+                        }}
+                      >
+                        {busy === "ai" || revIs ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />} {revIs ? "Revize ediliyor…" : "Claude ile revize et"}
+                      </button>
+                    </>
+                  )}
                   <button className="btn btn-bad min-w-28" disabled={!!busy} onClick={() => setPanel((p) => !p)}><ThumbsDown size={16} /> Olmamış</button>
                   <button className="btn btn-ok min-w-28" disabled={!!busy || soru.durum === "onaylandi"} onClick={olmus}>
                     {busy === "olmus" ? <Loader2 size={16} className="animate-spin" /> : <ThumbsUp size={16} />} Olmuş

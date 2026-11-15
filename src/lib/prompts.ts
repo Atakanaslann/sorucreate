@@ -193,12 +193,17 @@ export function yapistirilaniAyristir(metin: string): SoruCikti[] {
     throw new Error(`Yapıştırılan metin geçerli JSON değil: ${(e as Error).message}`);
   }
   const dizi = Array.isArray(veri) ? veri : (veri as { sorular?: unknown[] })?.sorular ?? [veri];
-  return dizi.map((x, i) => {
-    const r = SoruSchema.safeParse({ gorsel: null, beceri: "Problem çözme", ...(x as object) });
-    if (!r.success) {
-      const ilk = r.error.issues[0];
-      throw new Error(`${i + 1}. soru şemaya uymuyor: "${ilk.path.join(".")}" — ${ilk.message}`);
-    }
-    return r.data;
-  });
+  return dizi.map((x, i) => ciktiDogrula(x, i));
 }
+
+export function ciktiDogrula(x: unknown, i = 0): SoruCikti {
+  const r = SoruSchema.safeParse({ gorsel: null, beceri: "Problem çözme", ...(x as object) });
+  if (!r.success) {
+    const ilk = r.error.issues[0];
+    throw new Error(`${i + 1}. soru şemaya uymuyor: "${ilk.path.join(".")}" — ${ilk.message}`);
+  }
+  return r.data;
+}
+
+/** Claude Code --json-schema için: { sorular: Soru[] } */
+export const TopluSchema = z.object({ sorular: z.array(SoruSchema) });

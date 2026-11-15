@@ -1,11 +1,11 @@
 "use client";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { AlertTriangle, ArrowRight, ImageIcon, Loader2, MessagesSquare, Sparkles, Type, Zap } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Crown, ImageIcon, Loader2, MessagesSquare, Sparkles, Type, Zap } from "lucide-react";
 import { MUFREDAT } from "@/data/curriculum";
 import { GUNLUK_HEDEF, SINAVLAR } from "@/lib/types";
-import type { Sinav, Soru, SoruTuru, Zorluk } from "@/lib/types";
+import type { Sinav, Soru, SoruTuru, UretimIsi, Zorluk } from "@/lib/types";
 import { QuestionBody } from "./QuestionBody";
 import { ChatHandoff } from "./ChatHandoff";
 
@@ -50,7 +50,48 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
   const [busy, setBusy] = useState(false);
   const [hata, setHata] = useState<string | null>(null);
   const [sonuclar, setSonuclar] = useState<Sonuc[]>([]);
-  const [mod, setMod] = useState<"sohbet" | "api">(ai ? "api" : "sohbet");
+  const [mod, setMod] = useState<"abonelik" | "sohbet" | "api">("abonelik");
+  const [uretici, setUretici] = useState<{ dahili: boolean; claude: string | null; depo: string } | null>(null);
+  const [aktifIs, setAktifIs] = useState<UretimIsi | null>(null);
+  const [saniye, setSaniye] = useState(0);
+  const poll = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    fetch("/api/jobs").then((r) => r.json()).then((d) => setUretici({ dahili: d.dahili, claude: d.claude, depo: d.depo })).catch(() => undefined);
+    return () => { if (poll.current) clearInterval(poll.current); };
+  }, []);
+
+  function izle(isId: string) {
+    const bas = Date.now();
+    if (poll.current) clearInterval(poll.current);
+    poll.current = setInterval(async () => {
+      setSaniye(Math.round((Date.now() - bas) / 1000));
+      const d = await fetch(`/api/jobs?id=${isId}`).then((r) => r.json()).catch(() => null);
+      if (!d?.is) return;
+      setAktifIs(d.is);
+      if (d.is.durum === "tamam" || d.is.durum === "hata") {
+        clearInterval(poll.current!);
+        poll.current = null;
+        setBusy(false);
+        if (d.is.durum === "hata") setHata(d.is.hata ?? "Üretim başarısız");
+        else setSonuclar((p) => [...(d.sorular as Soru[]).map((soru) => ({ soru, benzerler: [] })), ...p]);
+      }
+    }, 3000);
+  }
+
+  async function abonelikleUret() {
+    setBusy(true); setHata(null); setSaniye(0);
+    try {
+      const res = await fetch("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(govde()) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "İş oluşturulamadı");
+      setAktifIs(data.is);
+      izle(data.is.id);
+    } catch (e) {
+      setHata((e as Error).message);
+      setBusy(false);
+    }
+  }
   const [prompt, setPrompt] = useState<string | null>(null);
   const [promptGovde, setPromptGovde] = useState<Govde | null>(null);
   const govde = (): Govde => ({ sinav, ders, kazanimKodu: kazanim, zorluk, tur, adet, tema: tema || undefined });
@@ -99,6 +140,7 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
   }
 
   async function uret() {
+    if (mod === "abonelik") return abonelikleUret();
     if (mod === "sohbet") return promptHazirla();
     setBusy(true); setHata(null);
     try {
@@ -142,8 +184,28 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
         <form className="card h-fit space-y-5 p-6" onSubmit={(e) => { e.preventDefault(); uret(); }}>
           <div className="space-y-2">
             <p className="label">Üretim yolu</p>
-            <Segment value={mod} onChange={(m) => { setMod(m); setPrompt(null); }} options={[{ v: "sohbet", label: <><MessagesSquare size={15} /> Sohbet aracıyla</> }, { v: "api", label: <><Zap size={15} /> API ile</> }]} />
-            <p className="text-xs text-muted">{mod === "sohbet" ? "API anahtarı gerekmez: prompt kopyalanır, Claude.ai / ChatGPT / Gemini yanıtı geri yapıştırılır." : "Tek tıkla otomatik üretim; ANTHROPIC_API_KEY gerekir."}</p>
+            <Segment
+              value={mod}
+              onChange={(m) => { setMod(m); setPrompt(null); }}
+              options={[
+                { v: "abonelik", label: <><Crown size={15} /> Abonelik</> },
+                { v: "sohbet", label: <><MessagesSquare size={15} /> Kopyala</> },
+                ...(ai ? [{ v: "api" as const, label: <><Zap size={15} /> API</> }] : []),
+              ]}
+            />
+            <p className="text-xs text-muted">
+              {mod === "abonelik" && "Tek tık: Claude Code, Claude Pro/Max aboneliğinle soruyu yazar. API ücreti yok."}
+              {mod === "sohbet" && "Prompt kopyalanır; Claude.ai / ChatGPT / Gemini yanıtı geri yapıştırılır."}
+              {mod === "api" && "ANTHROPIC_API_KEY ile otomatik üretim (ücretli)."}
+            </p>
+            {mod === "abonelik" && uretici?.dahili && !uretici.claude && (
+              <p className="rounded-xl bg-gold-soft p-3 text-xs leading-relaxed text-[#7a5512]">
+                Bu bilgisayarda Claude Code bulunamadı. Terminalde <code className="font-mono">npm i -g @anthropic-ai/claude-code</code>, ardından <code className="font-mono">claude</code> yazıp aboneliğinle giriş yap.
+              </p>
+            )}
+            {mod === "abonelik" && uretici?.dahili && uretici.claude && (
+              <p className="flex items-center gap-1.5 text-xs text-ok"><CheckCircle2 size={13} /> Claude Code {uretici.claude.split(" ")[0]} hazır</p>
+            )}
           </div>
           <div className="space-y-2">
             <p className="label">Sınav</p>
@@ -183,17 +245,33 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
           </div>
           <div className="flex items-end gap-3">
             <label className="w-24 space-y-2"><span className="label">Adet</span>
-              <select className="field" value={adet} onChange={(e) => setAdet(Number(e.target.value))}>{(mod === "sohbet" ? [1, 2, 3, 5, 10] : [1, 2, 3, 4, 5]).map((n) => <option key={n}>{n}</option>)}</select>
+              <select className="field" value={adet} onChange={(e) => setAdet(Number(e.target.value))}>{(mod === "api" ? [1, 2, 3, 4, 5] : [1, 2, 3, 5, 10]).map((n) => <option key={n}>{n}</option>)}</select>
             </label>
             <button className="btn btn-primary flex-1" disabled={busy || (mod === "api" && !ai)}>
-              {busy ? <><Loader2 size={16} className="animate-spin" /> {mod === "api" ? "Üretiliyor…" : "Hazırlanıyor…"}</> : mod === "api" ? <><Sparkles size={16} /> Üret</> : <><MessagesSquare size={16} /> Promptu hazırla</>}
+              {busy ? <><Loader2 size={16} className="animate-spin" /> {mod === "sohbet" ? "Hazırlanıyor…" : "Üretiliyor…"}</> : mod !== "sohbet" ? <><Sparkles size={16} /> Üret</> : <><MessagesSquare size={16} /> Promptu hazırla</>}
             </button>
           </div>
-          {busy && mod === "api" && <p className="text-xs text-muted">Her soru bağımsız olarak yazılıp kendi içinde çözülür; soru başına 30–90 sn sürebilir.</p>}
+          {busy && mod !== "sohbet" && <p className="text-xs text-muted">Sorular yazılıp kendi içinde çözülür; soru başına yaklaşık 30–90 sn.</p>}
         </form>
 
         <div className="space-y-5">
           {hata && <div className="card flex items-start gap-3 !border-[#efc7c3] !bg-bad-soft p-4 text-sm text-bad"><AlertTriangle size={18} /> {hata}</div>}
+          {mod === "abonelik" && aktifIs && busy && (
+            <div className="card flex items-start gap-4 p-6">
+              <Loader2 className="mt-0.5 shrink-0 animate-spin text-gold" />
+              <div className="space-y-1">
+                <p className="font-display text-lg">
+                  {aktifIs.durum === "kuyrukta" ? "Sırada, üretici bekleniyor…" : "Claude soruları yazıyor ve kendi içinde çözüyor…"}
+                </p>
+                <p className="text-sm text-muted">{saniye} sn · {aktifIs.istek.tip === "uret" ? `${aktifIs.istek.adet} soru` : "revizyon"} · Sayfadan ayrılabilirsin; sorular havuza kendiliğinden düşer.</p>
+                {aktifIs.durum === "kuyrukta" && saniye > 20 && (
+                  <p className="pt-2 text-sm text-[#7a5512]">
+                    {uretici?.dahili ? "Üretici başlamadı. Sunucuyu yeniden başlatmayı dene." : "Üretici çalışmıyor olabilir: bilgisayarında proje klasöründe npm run worker komutu açık mı?"}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
           {mod === "sohbet" && prompt && (
             <ChatHandoff prompt={prompt} baslik={`${promptGovde?.adet ?? adet} soru · ${promptGovde?.kazanimKodu ?? kazanim}`} onImport={iceAktar} />
           )}
@@ -206,7 +284,7 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
               </div>
             </div>
           )}
-          {busy && mod === "api" && Array.from({ length: adet }).map((_, i) => (
+          {busy && mod !== "sohbet" && Array.from({ length: Math.min(adet, 3) }).map((_, i) => (
             <div key={i} className="card animate-pulse space-y-3 p-6"><div className="h-3 w-1/3 rounded bg-line" /><div className="h-3 w-full rounded bg-line" /><div className="h-3 w-5/6 rounded bg-line" /><div className="h-40 rounded-xl bg-paper" /></div>
           ))}
           {sonuclar.map(({ soru, benzerler }) => (

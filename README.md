@@ -8,11 +8,21 @@ Ayrıntılı plan: [docs/PLAN.md](docs/PLAN.md)
 
 ```bash
 npm install
-cp .env.example .env.local   # (isteğe bağlı) ANTHROPIC_API_KEY
-npm run dev                  # http://localhost:3000
+npm i -g @anthropic-ai/claude-code   # bir kez
+claude                               # bir kez: Claude Pro/Max hesabınla giriş yap, sonra çık
+cp .env.example .env.local           # Supabase service_role anahtarını yapıştır (isteğe bağlı)
+npm run dev                          # http://localhost:3000
 ```
 
-**API anahtarı gerekmez.** Üret ekranında “Sohbet aracıyla” modu, Claude.ai / ChatGPT / Gemini'ye yapıştırılacak tam promptu hazırlar; gelen JSON yanıtı geri yapıştırınca sorular doğrulanıp havuza eklenir. Revizyon da aynı yolla yapılır. `ANTHROPIC_API_KEY` eklenirse “API ile” modu tek tıkla üretir.
+### “Üret” nasıl çalışıyor (API ücreti yok)
+
+“Üret”e basınca bir **üretim işi** kuyruğa eklenir. İşi bilgisayarındaki **Claude Code** (`claude -p`) yapar; Claude Code, giriş yaptığın **Claude aboneliğini** kullanır. Sorular hazır olunca havuza “Onay bekliyor” olarak düşer.
+
+- `npm run dev` ile yerelde çalışırken üretici sunucunun içindedir, başka bir şey açmana gerek yok.
+- Uygulama Vercel'de yayındaysa: `.env.local` içinde Supabase bilgileri ve `URETICI=harici` ile bilgisayarında `npm run worker` açık kalsın; siteden basılan “Üret” işlerini o yapar.
+- Güvenlik: üretici alt sürece `ANTHROPIC_API_KEY` geçirmez, böylece yanlışlıkla API faturalanmaz.
+
+Diğer yollar: “Kopyala” modu (prompt → Claude.ai / ChatGPT / Gemini → yanıtı yapıştır) ve anahtar varsa “API” modu.
 
 Görseller: soru sayfasındaki “ChatGPT promptu” → ChatGPT → indir → “Görsel yükle”. Veri taşıyan figürler için SVG her zaman hazırdır.
 
@@ -28,4 +38,4 @@ Görseller: soru sayfasındaki “ChatGPT promptu” → ChatGPT → indir → �
 
 ## Veri
 
-Faz 1'de havuz `data/pool.json` dosyasında tutulur (git'e girmez). Faz 2 için Supabase şeması `supabase/schema.sql`'de hazır.
+`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` tanımlıysa havuz ve üretim kuyruğu Supabase'te (`supabase/schema.sql`), değilse `data/pool.json` dosyasında tutulur. Tablolarda RLS açık ve politika yok: yalnızca sunucudaki service_role anahtarı erişir.

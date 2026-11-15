@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { addFeedback, getQuestion, restoreRevision, reviseQuestion, setImage, setStatus, similarTo } from "@/lib/store";
 import { aiHazir, soruRevizeEt, MODEL } from "@/lib/ai";
+import { isEkle } from "@/lib/jobs";
 import { manuelRevizyonPromptu, normalizeCikti, yapistirilaniAyristir } from "@/lib/prompts";
 import { OLMAMIS_NEDENLERI } from "@/lib/types";
 import type { OlmamisNedeni } from "@/lib/types";
@@ -72,7 +73,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
 async function revize(id: string, nedenler: OlmamisNedeni[], not?: string) {
   if (!aiHazir()) {
-    return NextResponse.json({ soru: await getQuestion(id), manuel: true });
+    // Abonelik yolu: revizyonu kuyruğa ekle, Claude Code üreticisi yapar.
+    const is = await isEkle({ tip: "revize", soruId: id, nedenler, not });
+    return NextResponse.json({ soru: await getQuestion(id), is });
   }
   try {
     const cur = await getQuestion(id);

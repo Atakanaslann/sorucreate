@@ -78,15 +78,17 @@ Konu/kazanım seç → (ops.) tema ver: "karton bardak", "yırtık kağıt", "fu
    → İnceleme ekranı: Olmuş ✅ / Olmamış ❌
 ```
 
-### 5.2 Yapay zekâ — iki üretim yolu
-**A) Sohbet aracıyla (varsayılan, API anahtarı gerekmez).** Kullanıcının Claude / ChatGPT / Gemini abonelik kotası kullanılır:
+### 5.2 Yapay zekâ — üç üretim yolu
+**A) Abonelik (varsayılan, tek tık, API ücreti yok).** "Üret" bir **üretim işi** oluşturur; iş, kullanıcının bilgisayarındaki **Claude Code** (`claude -p`, yapılandırılmış JSON çıktı, araçlar kapalı) ile yapılır. Claude Code, giriş yapılmış **Claude Pro/Max aboneliğini** kullanır. Yerelde üretici Next sunucusunun içindedir; site Vercel'deyse bilgisayarda `npm run worker` kuyruğu (Supabase `uretim_isleri`, `is_al()` ile kilitli alma) dinler. Revizyon da aynı kuyruktan geçer. Alt sürece `ANTHROPIC_API_KEY` geçirilmez.
+
+**B) Kopyala-yapıştır (yedek).** Claude / ChatGPT / Gemini sohbetine prompt yapıştırılır, yanıt geri yapıştırılır:
 1. Üret ekranında kazanım, zorluk, tür, tema ve adet (1–10) seçilir → **Promptu hazırla**.
 2. Uygulama; sistem kuralları + kazanım + havuzdaki benzer sorular + sık “olmamış” nedenleri + JSON çıktı biçimini içeren tam promptu üretir → **Kopyala**, sohbet aracında yeni sohbete yapıştırılır.
 3. Gelen yanıt (```json bloğu) geri yapıştırılır → şema doğrulaması (seçenek sayısı, doğru cevap, SVG temizliği) → havuza “Onay bekliyor” olarak düşer. Hatalı JSON'da hangi alanın bozuk olduğu söylenir.
 4. Revizyon da aynı şekilde: Olmamış → Revize et → revizyon promptu kopyalanır → düzeltilmiş soru yapıştırılır → yeni sürüm, ID değişmez.
 - Öneri: soru metni ve SVG için **Claude** (uzun JSON ve SVG'de en tutarlısı), görsel için **ChatGPT**.
 
-**B) API ile (isteğe bağlı).** `ANTHROPIC_API_KEY` tanımlanırsa tek tıkla otomatik üretim ve revizyon (`claude-opus-5-5`, yapılandırılmış çıktı). Toplu/gece üretimi (Faz 2) yalnızca bu yolla otomatikleşebilir.
+**C) API ile (isteğe bağlı, ücretli).** `ANTHROPIC_API_KEY` tanımlanırsa tek tıkla otomatik üretim ve revizyon (`claude-opus-5-5`, yapılandırılmış çıktı). Toplu/gece üretimi (Faz 2) yalnızca bu yolla otomatikleşebilir.
 
 - **Doğrulama turu (Faz 2):** ikinci bir model soruyu bağımsız çözer; cevap uyuşmazsa soru "şüpheli" işaretlenir.
 - **Görseller — hibrit yaklaşım:**
@@ -138,9 +140,8 @@ Yüklenen 4 örnek sayfadan (Çarpanlar–Katlar, Oran–Orantı, Denklemler, Sa
 |---|---|---|
 | Uygulama | **Next.js 15 (App Router) + TypeScript** | Tek kod tabanında arayüz + API, Vercel'e tek tıkla |
 | Arayüz | Tailwind CSS v4, Lucide ikonlar, Fraunces + Inter yazı tipleri | Premium, sade, hızlı |
-| Veri (Faz 1) | Yerel JSON deposu (`data/pool.json`) | Kurulumsuz çalışır |
-| Veri (Faz 2) | **Supabase** (Postgres + Storage + Auth) — şema `supabase/schema.sql`'de hazır | Görsel depolama, çoklu kullanıcı, yedek |
-| AI | Sohbet aracı (kopyala-yapıştır) veya Anthropic Claude API | Abonelik kotasıyla çalışır; API anahtarı opsiyonel |
+| Veri | **Supabase** (anahtar varsa) ya da yerel `data/pool.json` | Aynı arayüz, iki depo |
+| AI | Claude Code (abonelik) · kopyala-yapıştır · ops. Claude API | API ücreti olmadan tek tık |
 | Görsel | SVG + ChatGPT (manuel yükleme) | |
 
 Klasör yapısı:
@@ -154,9 +155,9 @@ supabase/schema.sql Faz 2 şeması
 ```
 
 ## 11. Alınan kararlar
-1. **Üretim:** API yerine kullanıcının sohbet aracı kotası (Claude / ChatGPT / Gemini) — kopyala-yapıştır modu. API modu kodda hazır, anahtar eklenirse açılır.
+1. **Üretim:** API yok; Claude aboneliği Claude Code üzerinden (tek tık). Yedek: kopyala-yapıştır (Claude / ChatGPT / Gemini).
 2. **Görsel servisi:** ChatGPT (günlük kota). Veri taşıyan figürlerde SVG yedek/öncelik.
-3. **Supabase:** çoklu cihaz/kişi kullanımı istenirse açılacak.
+3. **Supabase:** `sorucreate` projesi açıldı (eu-central-1); havuz, sayaçlar ve üretim kuyruğu orada.
 4. Başlangıç dersleri önerisi: LGS Matematik + TYT Matematik, ardından Fen ve Türkçe.
 
 ## 12. Yol haritası

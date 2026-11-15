@@ -78,7 +78,7 @@ export interface Soru extends SoruIcerik {
   parmakIzi: string;
   olusturma: string;
   guncelleme: string;
-  meta: { kaynak: "ornek" | "claude" | "manuel"; model?: string };
+  meta: { kaynak: "ornek" | "claude" | "manuel" | "abonelik"; model?: string };
 }
 
 export interface SoruFiltre {
@@ -103,3 +103,32 @@ export const DURUM_ETIKET: Record<Durum, string> = {
 };
 
 export const GUNLUK_HEDEF = { gorselli: 20, gorselsiz: 30 } as const;
+
+export interface UretIstegi {
+  tip: "uret";
+  sinav: Sinav;
+  ders: string;
+  kazanimKodu: string;
+  zorluk: Zorluk;
+  tur: SoruTuru;
+  adet: number;
+  tema?: string;
+}
+export interface ReviseIstegi {
+  tip: "revize";
+  soruId: string;
+  nedenler: OlmamisNedeni[];
+  not?: string;
+}
+export type IsDurumu = "kuyrukta" | "calisiyor" | "tamam" | "hata";
+export interface UretimIsi {
+  id: string;
+  durum: IsDurumu;
+  istek: UretIstegi | ReviseIstegi;
+  soru_idleri: string[];
+  hata?: string | null;
+  isci?: string | null;
+  olusturma: string;
+  baslama?: string | null;
+  bitis?: string | null;
+}
