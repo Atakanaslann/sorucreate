@@ -1,14 +1,15 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   ArrowLeft, Check, ExternalLink, MessagesSquare, Copy, Download, Eye, EyeOff, History, ImagePlus, Loader2, RotateCcw, Sparkles, ThumbsDown, ThumbsUp, Trash2, AlertTriangle, Plus,
 } from "lucide-react";
 import type { Soru, OlmamisNedeni } from "@/lib/types";
 import { OLMAMIS_NEDENLERI } from "@/lib/types";
-import { QuestionBody, Rich } from "./QuestionBody";
+import { QuestionBody, Rich, ExamPaper } from "./QuestionBody";
+import { toast } from "./toast";
 import { DurumBadge, TurBadge, ZorlukBadge } from "./Badges";
 import { svgDataUri } from "./QuestionFigure";
 import { useDeneme } from "./useDeneme";
@@ -18,7 +19,7 @@ function CopyBtn({ text, label = "Kopyala" }: { text: string; label?: string }) 
   const [ok, setOk] = useState(false);
   return (
     <button
-      className="btn !h-8 !px-3 text-xs"
+      className="btn btn-sm"
       onClick={async () => {
         await navigator.clipboard.writeText(text);
         setOk(true);
@@ -112,6 +113,26 @@ export function QuestionDetail({ soru, benzerler }: { soru: Soru; benzerler: { i
 
   const kaldirildi = soru.durum === "kaldirildi";
 
+  useEffect(() => {
+    if (!mesaj) return;
+    toast(mesaj.text, mesaj.tur === "ok" ? "ok" : "uyari");
+    window.dispatchEvent(new Event("havuz-degisti"));
+  }, [mesaj]);
+
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || e.metaKey || e.ctrlKey || busy || kaldirildi) return;
+      const k = e.key.toLowerCase();
+      if (k === "o" && soru.durum !== "onaylandi") { e.preventDefault(); olmus(); }
+      else if (k === "x") { e.preventDefault(); setPanel((p) => !p); }
+      else if (k === "c") { e.preventDefault(); setCevap((v) => !v); }
+      else if (e.key === "Escape") setPanel(false);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  });
+
   return (
     <div className="mx-auto max-w-6xl pb-44">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -128,22 +149,27 @@ export function QuestionDetail({ soru, benzerler }: { soru: Soru; benzerler: { i
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-6">
-          <article className="card relative overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-[#fbfaf6] px-6 py-4">
-              <div className="flex items-center gap-3">
-                <span className="whitespace-nowrap rounded-lg bg-ink px-2.5 py-1 font-mono text-xs font-semibold text-white">{soru.id}</span>
-                <span className="text-sm text-ink-2">{soru.sinav} · {soru.ders} · {soru.unite}</span>
-              </div>
-              <DurumBadge durum={soru.durum} />
+          <div className="rise flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="label">{soru.sinav} · {soru.ders} · {soru.sinif}. sınıf</p>
+              <h1 className="mt-1.5 font-display text-[30px] leading-tight tracking-tight sm:text-[34px]">{soru.unite}</h1>
             </div>
-            <div className={clsx("p-6 sm:p-8", kaldirildi && "opacity-50")}>
-              <QuestionBody soru={soru} cevapGoster={cevap} />
-            </div>
-          </article>
+            <DurumBadge durum={soru.durum} />
+          </div>
+          <ExamPaper
+            className={clsx("rise rise-1", kaldirildi && "opacity-50")}
+            ust={<>
+              <span className="flex items-center gap-2"><span className="rounded-md bg-ink px-2 py-0.5 font-mono tracking-normal text-white">{soru.id}</span> v{soru.surum}</span>
+              <span className="hidden sm:inline">{soru.sinav} · {soru.ders}</span>
+              <span className="flex items-center gap-1.5 font-mono tracking-normal">{soru.kazanimKodu}</span>
+            </>}
+          >
+            <QuestionBody soru={soru} cevapGoster={cevap} />
+          </ExamPaper>
 
-          {mesaj && (
-            <div className={clsx("card flex items-start gap-3 p-4 text-sm", mesaj.tur === "ok" ? "!border-[#bfe3d2] !bg-ok-soft text-ok" : "!border-[#f0d2a8] !bg-gold-soft text-[#7a5512]")}>
-              {mesaj.tur === "ok" ? <Check size={18} /> : <AlertTriangle size={18} />} {mesaj.text}
+          {mesaj && (mesaj.tur === "uyari" || revIs) && (
+            <div className={clsx("card pop flex items-start gap-3 p-4 text-sm", mesaj.tur === "ok" ? "!border-[#bfe3d2] !bg-ok-soft text-ok" : "!border-[#f0d2a8] !bg-gold-soft text-[#7a5512]")}>
+              {revIs ? <Loader2 size={18} className="animate-spin" /> : mesaj.tur === "ok" ? <Check size={18} /> : <AlertTriangle size={18} />} {mesaj.text}
             </div>
           )}
 
@@ -152,9 +178,9 @@ export function QuestionDetail({ soru, benzerler }: { soru: Soru; benzerler: { i
           )}
 
           {cevap && (
-            <section className="card space-y-5 p-6 sm:p-8">
+            <section className="card pop space-y-5 p-6 sm:p-8">
               <div>
-                <h3 className="font-display text-xl">Çözüm</h3>
+                <h3 className="flex items-center gap-2 font-display text-xl"><span className="grid h-7 w-7 place-items-center rounded-full bg-ok text-sm font-bold text-white">{soru.dogruCevap}</span> Çözüm</h3>
                 <p className="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-ink-2"><Rich text={soru.cozum} /></p>
               </div>
               <div>
@@ -177,15 +203,15 @@ export function QuestionDetail({ soru, benzerler }: { soru: Soru; benzerler: { i
                 <h3 className="font-display text-xl">Görsel brifi</h3>
                 <div className="flex flex-wrap gap-2">
                   <CopyBtn text={gorselPromptu} label="ChatGPT promptu" />
-                  <a className="btn !h-8 !px-3 text-xs" href="https://chatgpt.com/" target="_blank" rel="noreferrer"><ExternalLink size={14} /> ChatGPT</a>
+                  <a className="btn btn-sm" href="https://chatgpt.com/" target="_blank" rel="noreferrer"><ExternalLink size={14} /> ChatGPT</a>
                   {soru.gorsel.svg && (
-                    <a className="btn !h-8 !px-3 text-xs" href={svgDataUri(soru.gorsel.svg)} download={`${soru.id}.svg`}><Download size={14} /> SVG</a>
+                    <a className="btn btn-sm" href={svgDataUri(soru.gorsel.svg)} download={`${soru.id}.svg`}><Download size={14} /> SVG</a>
                   )}
-                  <button className="btn !h-8 !px-3 text-xs" onClick={() => fileRef.current?.click()} disabled={busy === "gorsel"}>
+                  <button className="btn btn-sm" onClick={() => fileRef.current?.click()} disabled={busy === "gorsel"}>
                     {busy === "gorsel" ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />} Görsel yükle
                   </button>
                   {soru.gorsel.url && (
-                    <button className="btn !h-8 !px-3 text-xs" onClick={() => patch({ action: "gorsel", url: undefined }, "gorsel")}>Yüklenen görseli kaldır</button>
+                    <button className="btn btn-sm" onClick={() => patch({ action: "gorsel", url: undefined }, "gorsel")}>Yüklenen görseli kaldır</button>
                   )}
                   <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && onUpload(e.target.files[0])} />
                 </div>
@@ -203,7 +229,7 @@ export function QuestionDetail({ soru, benzerler }: { soru: Soru; benzerler: { i
               )}
               <div>
                 <div className="mb-2 flex items-center justify-between"><p className="label">Görsel üretim promptu</p><CopyBtn text={soru.gorsel.prompt} /></div>
-                <pre className="whitespace-pre-wrap rounded-xl bg-ink p-4 font-mono text-xs leading-relaxed text-white/90">{soru.gorsel.prompt}</pre>
+                <pre className="whitespace-pre-wrap rounded-xl bg-[#0e1119] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.06)] font-mono text-xs leading-relaxed text-white/90">{soru.gorsel.prompt}</pre>
               </div>
               <div>
                 <div className="mb-2 flex items-center justify-between"><p className="label">Negatif prompt</p><CopyBtn text={soru.gorsel.negatifPrompt} /></div>
@@ -285,10 +311,10 @@ export function QuestionDetail({ soru, benzerler }: { soru: Soru; benzerler: { i
       </div>
 
       {/* Sabit alt karar çubuğu */}
-      <div className="no-print fixed inset-x-0 bottom-16 z-30 px-4 lg:bottom-6 lg:left-64">
+      <div className="no-print fixed inset-x-0 bottom-24 z-30 px-4 lg:bottom-6 lg:left-[268px]">
         <div className="mx-auto max-w-3xl">
           {panel && !kaldirildi && (
-            <div className="card mb-3 space-y-4 p-5">
+            <div className="card pop mb-3 space-y-4 p-5 !shadow-[var(--shadow-lg)]">
               <p className="font-display text-lg">Neden olmadı?</p>
               <div className="flex flex-wrap gap-2">
                 {OLMAMIS_NEDENLERI.map((n) => {
@@ -297,7 +323,7 @@ export function QuestionDetail({ soru, benzerler }: { soru: Soru; benzerler: { i
                     <button
                       key={n.key}
                       onClick={() => setNedenler((x) => (on ? x.filter((y) => y !== n.key) : [...x, n.key]))}
-                      className={clsx("rounded-full border px-3 py-1.5 text-sm transition", on ? "border-bad bg-bad-soft text-bad" : "border-line hover:border-[#cfc9ba]")}
+                      className={clsx("rounded-full border px-3 py-1.5 text-sm transition", on ? "border-bad bg-bad-soft text-bad" : "border-line-2 bg-card hover:border-ink/30")}
                     >
                       {n.label}
                     </button>
@@ -316,22 +342,23 @@ export function QuestionDetail({ soru, benzerler }: { soru: Soru; benzerler: { i
               </div>
             </div>
           )}
-          <div className="card flex flex-wrap items-center justify-between gap-3 !rounded-2xl p-3 pl-5 shadow-xl">
-            <span className="text-sm text-ink-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-white/10 bg-[#0e1119]/92 p-2.5 pl-5 text-white shadow-[0_30px_60px_-20px_rgba(13,16,23,.6)] backdrop-blur-xl">
+            <span className="flex items-center gap-2 text-sm text-white/70">
               {kaldirildi ? "Bu soru kaldırıldı." : soru.durum === "onaylandi" ? "Onaylandı. Fikrin değiştiyse tekrar değerlendir." : soru.durum === "revizyonda" ? "Revizyon bekliyor." : "Bu soru nasıl?"}
+              {!kaldirildi && <span className="hidden items-center gap-1 text-[11px] text-white/35 md:flex"><span className="rounded border border-white/15 px-1 font-mono">O</span> / <span className="rounded border border-white/15 px-1 font-mono">X</span></span>}
             </span>
             <div className="flex gap-2">
               {kaldirildi ? (
-                <button className="btn" disabled={!!busy} onClick={() => patch({ action: "geri_al" }, "geri")}><RotateCcw size={16} /> Geri al</button>
+                <button className="btn btn-gold" disabled={!!busy} onClick={() => patch({ action: "geri_al" }, "geri")}><RotateCcw size={16} /> Geri al</button>
               ) : (
                 <>
                   {soru.durum === "revizyonda" && (
                     <>
-                      <button className="btn" title="Kopyala-yapıştır ile revize et" disabled={!!busy || !!revIs} onClick={manuelRevizyonAc}>
+                      <button className="btn !border-white/15 !bg-white/5 !text-white !shadow-none hover:!bg-white/10" title="Kopyala-yapıştır ile revize et" disabled={!!busy || !!revIs} onClick={manuelRevizyonAc}>
                         {busy === "rp" ? <Loader2 size={16} className="animate-spin" /> : <MessagesSquare size={16} />}
                       </button>
                       <button
-                        className="btn"
+                        className="btn btn-gold"
                         disabled={!!busy || !!revIs}
                         onClick={async () => {
                           const r = await patch({ action: "ai_revize" }, "ai");
@@ -342,7 +369,7 @@ export function QuestionDetail({ soru, benzerler }: { soru: Soru; benzerler: { i
                       </button>
                     </>
                   )}
-                  <button className="btn btn-bad min-w-28" disabled={!!busy} onClick={() => setPanel((p) => !p)}><ThumbsDown size={16} /> Olmamış</button>
+                  <button className="btn min-w-28 !border-[#ff9d92]/25 !bg-[#b3372f]/15 !text-[#ffb4ab] !shadow-none hover:!bg-[#b3372f]/30" disabled={!!busy} onClick={() => setPanel((p) => !p)}><ThumbsDown size={16} /> Olmamış</button>
                   <button className="btn btn-ok min-w-28" disabled={!!busy || soru.durum === "onaylandi"} onClick={olmus}>
                     {busy === "olmus" ? <Loader2 size={16} className="animate-spin" /> : <ThumbsUp size={16} />} Olmuş
                   </button>

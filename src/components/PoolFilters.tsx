@@ -30,10 +30,10 @@ export function PoolFilters() {
   const hasAny = Array.from(sp.keys()).length > 0;
 
   return (
-    <div className="card grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="card rise rise-1 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
       <div className="relative sm:col-span-2">
-        <Search size={16} className="absolute left-3 top-3 text-muted" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ID, metin, kazanım ara…" className="field !pl-9" />
+        <Search size={16} className="pointer-events-none absolute left-3.5 top-[14px] text-muted" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ID, metin, kazanım ara…" className="field !pl-10" />
       </div>
       <select className="field" value={sinav} onChange={(e) => set("sinav", e.target.value)}>
         <option value="">Tüm sınavlar</option>

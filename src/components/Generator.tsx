@@ -6,7 +6,8 @@ import { AlertTriangle, ArrowRight, CheckCircle2, Crown, ImageIcon, Loader2, Mes
 import { MUFREDAT } from "@/data/curriculum";
 import { GUNLUK_HEDEF, SINAVLAR } from "@/lib/types";
 import type { Sinav, Soru, SoruTuru, UretimIsi, Zorluk } from "@/lib/types";
-import { QuestionBody } from "./QuestionBody";
+import { QuestionBody, ExamPaper } from "./QuestionBody";
+import { toast } from "./toast";
 import { ChatHandoff } from "./ChatHandoff";
 
 const TEMALAR = [
@@ -24,9 +25,9 @@ const TEMALAR = [
 
 function Segment<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { v: T; label: React.ReactNode }[] }) {
   return (
-    <div className="flex rounded-xl border border-line bg-paper p-1">
+    <div className="flex rounded-[14px] border border-line bg-paper-2/70 p-1 shadow-[inset_0_1px_2px_rgba(13,16,23,.05)]">
       {options.map((o) => (
-        <button key={o.v} type="button" onClick={() => onChange(o.v)} className={clsx("flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition", value === o.v ? "bg-card text-ink shadow-sm" : "text-muted hover:text-ink")}>
+        <button key={o.v} type="button" onClick={() => onChange(o.v)} className={clsx("flex flex-1 items-center justify-center gap-2 rounded-[10px] px-3 py-2 text-sm font-semibold transition duration-300", value === o.v ? "bg-card text-ink shadow-[0_1px_2px_rgba(13,16,23,.08),0_4px_12px_-4px_rgba(13,16,23,.15)]" : "text-muted hover:text-ink")}>
           {o.label}
         </button>
       ))}
@@ -73,8 +74,9 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
         clearInterval(poll.current!);
         poll.current = null;
         setBusy(false);
-        if (d.is.durum === "hata") setHata(d.is.hata ?? "Üretim başarısız");
-        else setSonuclar((p) => [...(d.sorular as Soru[]).map((soru) => ({ soru, benzerler: [] })), ...p]);
+        if (d.is.durum === "hata") { setHata(d.is.hata ?? "Üretim başarısız"); toast("Üretim başarısız", "uyari", d.is.hata ?? undefined); }
+        else { toast(`${d.sorular.length} soru havuza eklendi`, "ok", "İnceleme modunda değerlendirebilirsin."); window.dispatchEvent(new Event("havuz-degisti")); }
+        if (d.is.durum === "tamam") setSonuclar((p) => [...(d.sorular as Soru[]).map((soru) => ({ soru, benzerler: [] })), ...p]);
       }
     }, 3000);
   }
@@ -160,14 +162,23 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
   const kalanM = Math.max(0, GUNLUK_HEDEF.gorselsiz - bugun.gorselsiz);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 pb-20">
-      <header>
+    <div className="mx-auto max-w-[1180px] space-y-8 pb-20">
+      <header className="rise flex flex-wrap items-end justify-between gap-6">
+        <div>
         <p className="label">Soru üret</p>
-        <h1 className="mt-2 font-display text-4xl tracking-tight">Kazanımdan soruya</h1>
-        <p className="mt-2 max-w-2xl text-ink-2">
+        <h1 className="mt-2 font-display text-[42px] leading-[1.05] tracking-tight sm:text-[52px]">Kazanımdan <span className="italic text-gold">soruya.</span></h1>
+        <p className="mt-3 max-w-2xl leading-relaxed text-ink-2">
           Seçtiğin kazanıma göre yapay zekâ soruyu, adım adım çözümü, çeldirici gerekçelerini ve yeni nesil sorularda görsel promptunu + kesin ölçülü SVG figürü birlikte hazırlar.
-          Bugün kalan: <strong>{kalanG}</strong> görselli, <strong>{kalanM}</strong> görselsiz.
         </p>
+        </div>
+        <div className="flex gap-3">
+          {[{ k: "Yeni nesil", v: kalanG, c: "from-[#f3dfae] to-[#b8873a]" }, { k: "Görselsiz", v: kalanM, c: "from-[#a9b6ff] to-[#2747c9]" }].map((x) => (
+            <div key={x.k} className="card min-w-32 px-4 py-3">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.14em] text-muted"><span className={`h-2 w-2 rounded-full bg-gradient-to-br ${x.c}`} />{x.k}</div>
+              <div className="tabular mt-1 font-display text-3xl leading-none">{x.v}<span className="ml-1 text-xs font-sans text-muted">kaldı</span></div>
+            </div>
+          ))}
+        </div>
       </header>
 
       {!ai && mod === "api" && (
@@ -180,8 +191,8 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[400px_minmax(0,1fr)]">
-        <form className="card h-fit space-y-5 p-6" onSubmit={(e) => { e.preventDefault(); uret(); }}>
+      <div className="grid gap-6 lg:grid-cols-[410px_minmax(0,1fr)]">
+        <form className="card rise rise-1 h-fit space-y-6 p-6 lg:sticky lg:top-24" onSubmit={(e) => { e.preventDefault(); uret(); }}>
           <div className="space-y-2">
             <p className="label">Üretim yolu</p>
             <Segment
@@ -247,7 +258,7 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
             <label className="w-24 space-y-2"><span className="label">Adet</span>
               <select className="field" value={adet} onChange={(e) => setAdet(Number(e.target.value))}>{(mod === "api" ? [1, 2, 3, 4, 5] : [1, 2, 3, 5, 10]).map((n) => <option key={n}>{n}</option>)}</select>
             </label>
-            <button className="btn btn-primary flex-1" disabled={busy || (mod === "api" && !ai)}>
+            <button className="btn btn-gold !h-[46px] flex-1 !text-[15px]" disabled={busy || (mod === "api" && !ai)}>
               {busy ? <><Loader2 size={16} className="animate-spin" /> {mod === "sohbet" ? "Hazırlanıyor…" : "Üretiliyor…"}</> : mod !== "sohbet" ? <><Sparkles size={16} /> Üret</> : <><MessagesSquare size={16} /> Promptu hazırla</>}
             </button>
           </div>
@@ -257,15 +268,19 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
         <div className="space-y-5">
           {hata && <div className="card flex items-start gap-3 !border-[#efc7c3] !bg-bad-soft p-4 text-sm text-bad"><AlertTriangle size={18} /> {hata}</div>}
           {mod === "abonelik" && aktifIs && busy && (
-            <div className="card flex items-start gap-4 p-6">
-              <Loader2 className="mt-0.5 shrink-0 animate-spin text-gold" />
-              <div className="space-y-1">
-                <p className="font-display text-lg">
+            <div className="ink-panel grain pop flex items-start gap-5 p-7">
+              <span className="relative grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/[.06]">
+                <span className="absolute inset-0 animate-ping rounded-2xl bg-gold-2/20" />
+                <Sparkles className="relative text-gold-2" size={20} />
+              </span>
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="font-display text-xl">
                   {aktifIs.durum === "kuyrukta" ? "Sırada, üretici bekleniyor…" : "Claude soruları yazıyor ve kendi içinde çözüyor…"}
                 </p>
-                <p className="text-sm text-muted">{saniye} sn · {aktifIs.istek.tip === "uret" ? `${aktifIs.istek.adet} soru` : "revizyon"} · Sayfadan ayrılabilirsin; sorular havuza kendiliğinden düşer.</p>
+                <div className="my-3 h-1 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-gradient-to-r from-[#b8873a] to-[#f3dfae] transition-[width] duration-1000" style={{ width: `${Math.min(95, (saniye / (75 * (aktifIs.istek.tip === "uret" ? aktifIs.istek.adet : 1))) * 100)}%` }} /></div>
+                <p className="tabular text-sm text-white/55">{saniye} sn · {aktifIs.istek.tip === "uret" ? `${aktifIs.istek.adet} soru` : "revizyon"} · Sayfadan ayrılabilirsin; sorular havuza kendiliğinden düşer.</p>
                 {aktifIs.durum === "kuyrukta" && saniye > 20 && (
-                  <p className="pt-2 text-sm text-[#7a5512]">
+                  <p className="pt-2 text-sm text-gold-2">
                     {uretici?.dahili ? "Üretici başlamadı. Sunucuyu yeniden başlatmayı dene." : "Üretici çalışmıyor olabilir: bilgisayarında proje klasöründe npm run worker komutu açık mı?"}
                   </p>
                 )}
@@ -276,30 +291,34 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
             <ChatHandoff prompt={prompt} baslik={`${promptGovde?.adet ?? adet} soru · ${promptGovde?.kazanimKodu ?? kazanim}`} onImport={iceAktar} />
           )}
           {sonuclar.length === 0 && !busy && !(mod === "sohbet" && prompt) && (
-            <div className="card grid min-h-80 place-items-center p-10 text-center">
-              <div>
-                <Sparkles className="mx-auto text-gold" />
-                <p className="mt-3 font-display text-xl">Üretilen sorular burada görünecek</p>
-                <p className="mt-1 text-sm text-muted">Hepsi havuza “Onay bekliyor” olarak düşer; her birini Olmuş / Olmamış ile değerlendirirsin.</p>
+            <div className="card rise rise-2 relative grid min-h-[420px] place-items-center overflow-hidden p-10 text-center">
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(230,201,138,.18),transparent_60%)]" />
+              <div className="relative">
+                <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-ink text-gold-2 shadow-[0_14px_30px_-10px_rgba(13,16,23,.6)]"><Sparkles size={22} /></span>
+                <p className="mt-5 font-display text-2xl tracking-tight">Üretilen sorular burada görünecek</p>
+                <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">Hepsi havuza “Onay bekliyor” olarak düşer; her birini Olmuş / Olmamış ile değerlendirirsin.</p>
               </div>
             </div>
           )}
           {busy && mod !== "sohbet" && Array.from({ length: Math.min(adet, 3) }).map((_, i) => (
-            <div key={i} className="card animate-pulse space-y-3 p-6"><div className="h-3 w-1/3 rounded bg-line" /><div className="h-3 w-full rounded bg-line" /><div className="h-3 w-5/6 rounded bg-line" /><div className="h-40 rounded-xl bg-paper" /></div>
+            <div key={i} className="card space-y-3 p-7"><div className="skeleton h-3 w-1/3" /><div className="skeleton h-3 w-full" /><div className="skeleton h-3 w-5/6" /><div className="skeleton h-44 !rounded-2xl" /><div className="grid grid-cols-2 gap-2"><div className="skeleton h-8" /><div className="skeleton h-8" /><div className="skeleton h-8" /><div className="skeleton h-8" /></div></div>
           ))}
           {sonuclar.map(({ soru, benzerler }) => (
-            <article key={soru.id} className="card overflow-hidden">
-              <div className="flex items-center justify-between border-b border-line bg-[#fbfaf6] px-5 py-3">
-                <span className="font-mono text-xs font-semibold">{soru.id}</span>
-                <Link href={`/soru/${soru.id}`} className="flex items-center gap-1 text-sm font-semibold">Değerlendir <ArrowRight size={14} /></Link>
-              </div>
+            <div key={soru.id} className="pop space-y-2">
               {benzerler.length > 0 && (
-                <div className="flex items-center gap-2 border-b border-line bg-gold-soft px-5 py-2 text-xs text-[#7a5512]">
+                <div className="flex items-center gap-2 rounded-xl bg-gold-soft px-4 py-2 text-xs text-[#7a5512]">
                   <AlertTriangle size={14} /> {benzerler[0].id} ile %{Math.round(benzerler[0].skor * 100)} benzer.
                 </div>
               )}
-              <div className="p-6"><QuestionBody soru={soru} /></div>
-            </article>
+              <ExamPaper
+                ust={<>
+                  <span className="flex items-center gap-2"><span className="rounded-md bg-ink px-2 py-0.5 font-mono tracking-normal text-white">{soru.id}</span>{soru.zorluk === "zor" ? "Zor" : "Orta"}</span>
+                  <Link href={`/soru/${soru.id}`} className="flex items-center gap-1 tracking-normal text-ink hover:text-gold">Değerlendir <ArrowRight size={13} /></Link>
+                </>}
+              >
+                <QuestionBody soru={soru} />
+              </ExamPaper>
+            </div>
           ))}
         </div>
       </div>

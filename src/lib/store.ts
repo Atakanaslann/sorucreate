@@ -190,8 +190,16 @@ export async function stats() {
         for (const n of g.nedenler) nedenler[n] = (nedenler[n] ?? 0) + 1;
       }
     }
+  const uretilen = all.filter((s) => s.meta.kaynak !== "ornek");
+  const gunluk = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(Date.now() - (6 - i) * 86400000);
+    const gun = fmt.format(d);
+    const o = uretilen.filter((s) => fmt.format(new Date(s.olusturma)) === gun);
+    return { gun, gorselli: o.filter((s) => s.tur === "gorselli").length, gorselsiz: o.filter((s) => s.tur === "gorselsiz").length };
+  });
   return {
     toplam: aktif.length,
+    gunluk,
     durum: count(all, (s) => s.durum),
     dersZorluk: count(aktif, (s) => `${s.sinav} ${s.ders}|${s.zorluk}`),
     bugun: { gorselli: bugun.filter((s) => s.tur === "gorselli").length, gorselsiz: bugun.filter((s) => s.tur === "gorselsiz").length },

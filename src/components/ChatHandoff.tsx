@@ -36,16 +36,16 @@ export function ChatHandoff({
   };
 
   return (
-    <div className="card space-y-6 p-6">
+    <div className="card pop space-y-6 p-6 sm:p-7">
       {baslik && <h3 className="font-display text-xl">{baslik}</h3>}
       <ol className="space-y-6">
         <li className="flex gap-4">
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ink text-xs font-semibold text-white">1</span>
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#f3dfae] to-[#b8873a] font-display text-sm font-semibold text-[#14100a]">1</span>
           <div className="min-w-0 flex-1 space-y-3">
             <p className="font-semibold">Promptu kopyala ve sohbet aracında yeni bir sohbete yapıştır</p>
             <div className="flex flex-wrap gap-2">
               {ARACLAR.map((a) => (
-                <button key={a.key} type="button" onClick={() => setArac(a.key)} className={clsx("rounded-full border px-3 py-1.5 text-sm transition", arac === a.key ? "border-ink bg-ink text-white" : "border-line hover:border-[#cfc9ba]")}>
+                <button key={a.key} type="button" onClick={() => setArac(a.key)} className={clsx("rounded-full border px-3 py-1.5 text-sm transition", arac === a.key ? "border-ink bg-ink text-white shadow-[0_6px_14px_-6px_rgba(13,16,23,.5)]" : "border-line-2 bg-card hover:border-ink/30")}>
                   {a.key}
                 </button>
               ))}
@@ -62,7 +62,7 @@ export function ChatHandoff({
           </div>
         </li>
         <li className="flex gap-4">
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ink text-xs font-semibold text-white">2</span>
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#f3dfae] to-[#b8873a] font-display text-sm font-semibold text-[#14100a]">2</span>
           <div className="min-w-0 flex-1 space-y-3">
             <p className="font-semibold">Gelen yanıtın tamamını buraya yapıştır</p>
             <textarea className="field font-mono !text-xs" rows={7} value={metin} onChange={(e) => setMetin(e.target.value)} placeholder={'```json\n{ "sorular": [ … ] }\n```'} />
