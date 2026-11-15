@@ -78,13 +78,20 @@ Konu/kazanım seç → (ops.) tema ver: "karton bardak", "yırtık kağıt", "fu
    → İnceleme ekranı: Olmuş ✅ / Olmamış ❌
 ```
 
-### 5.2 Yapay zekâ
-- **Metin üretimi:** Claude API (`claude-opus-5-5`), yapılandırılmış çıktı (JSON şeması) ile. Tek çağrıda soru + çözüm + çeldirici gerekçeleri + görsel brifi döner.
-- **Doğrulama turu (Faz 2):** ikinci bir çağrı soruyu bağımsız çözer; cevap uyuşmazsa soru "şüpheli" işaretlenir.
-- **Görseller — hibrit yaklaşım (önerim):**
-  - **Kesin veri taşıyan figürler** (raf ölçüleri, terazideki ağırlıklar, ızgara, grafik, geometrik şekil): AI görsel modelleri sayıları ve oranları sık bozar. Bunlar için Claude doğrudan **SVG** çizer; ölçüler birebir doğru olur, anında görünür.
-  - **Atmosfer / gerçekçi sahne** (futbol sahası, yırtık kağıt dokusu, kafeterya): soruyla birlikte üretilen **görsel prompt** bir görsel servisine verilir (seçim kullanıcıda — §11). Prompt; stil, kompozisyon, renk paleti, "görselde yazı olmasın / sadece şu etiketler olsun" kurallarını içerir.
-  - Görsel servisi bağlanana kadar prompt "Kopyala" butonuyla dışarıda kullanılabilir, sonuç görsel soru sayfasına yüklenir.
+### 5.2 Yapay zekâ — iki üretim yolu
+**A) Sohbet aracıyla (varsayılan, API anahtarı gerekmez).** Kullanıcının Claude / ChatGPT / Gemini abonelik kotası kullanılır:
+1. Üret ekranında kazanım, zorluk, tür, tema ve adet (1–10) seçilir → **Promptu hazırla**.
+2. Uygulama; sistem kuralları + kazanım + havuzdaki benzer sorular + sık “olmamış” nedenleri + JSON çıktı biçimini içeren tam promptu üretir → **Kopyala**, sohbet aracında yeni sohbete yapıştırılır.
+3. Gelen yanıt (```json bloğu) geri yapıştırılır → şema doğrulaması (seçenek sayısı, doğru cevap, SVG temizliği) → havuza “Onay bekliyor” olarak düşer. Hatalı JSON'da hangi alanın bozuk olduğu söylenir.
+4. Revizyon da aynı şekilde: Olmamış → Revize et → revizyon promptu kopyalanır → düzeltilmiş soru yapıştırılır → yeni sürüm, ID değişmez.
+- Öneri: soru metni ve SVG için **Claude** (uzun JSON ve SVG'de en tutarlısı), görsel için **ChatGPT**.
+
+**B) API ile (isteğe bağlı).** `ANTHROPIC_API_KEY` tanımlanırsa tek tıkla otomatik üretim ve revizyon (`claude-opus-5-5`, yapılandırılmış çıktı). Toplu/gece üretimi (Faz 2) yalnızca bu yolla otomatikleşebilir.
+
+- **Doğrulama turu (Faz 2):** ikinci bir model soruyu bağımsız çözer; cevap uyuşmazsa soru "şüpheli" işaretlenir.
+- **Görseller — hibrit yaklaşım:**
+  - **Kesin veri taşıyan figürler** (raf ölçüleri, terazideki ağırlıklar, ızgara, grafik, geometrik şekil): AI görsel modelleri sayıları ve oranları sık bozar. Bunlar için soruyla birlikte **SVG** üretilir; ölçüler birebir doğru olur, anında görünür.
+  - **Atmosfer / gerçekçi sahne**: soru sayfasındaki **ChatGPT promptu** (sahne + zorunlu etiketler + kaçınılacaklar) kopyalanır, ChatGPT'de üretilen görsel indirilip **Görsel yükle** ile soruya eklenir. Yüklenen görsel SVG'nin önüne geçer; kaldırılırsa SVG'ye dönülür.
 
 ### 5.3 Referans görsellerden çıkan stil kuralları
 Yüklenen 4 örnek sayfadan (Çarpanlar–Katlar, Oran–Orantı, Denklemler, Sayma–Olasılık):
@@ -133,29 +140,29 @@ Yüklenen 4 örnek sayfadan (Çarpanlar–Katlar, Oran–Orantı, Denklemler, Sa
 | Arayüz | Tailwind CSS v4, Lucide ikonlar, Fraunces + Inter yazı tipleri | Premium, sade, hızlı |
 | Veri (Faz 1) | Yerel JSON deposu (`data/pool.json`) | Kurulumsuz çalışır |
 | Veri (Faz 2) | **Supabase** (Postgres + Storage + Auth) — şema `supabase/schema.sql`'de hazır | Görsel depolama, çoklu kullanıcı, yedek |
-| AI | Anthropic Claude API | Türkçe kalite, yapılandırılmış çıktı, SVG çizimi |
-| Görsel | Seçilecek (§11) | |
+| AI | Sohbet aracı (kopyala-yapıştır) veya Anthropic Claude API | Abonelik kotasıyla çalışır; API anahtarı opsiyonel |
+| Görsel | SVG + ChatGPT (manuel yükleme) | |
 
 Klasör yapısı:
 ```
 src/app/            sayfalar: / (pano), /uret, /havuz, /soru/[id], /deneme
-src/app/api/        questions, generate, revise, stats
-src/lib/            store, ai, similarity, ids, types
+src/app/api/        questions, generate (API), import (sohbet aracı)
+src/lib/            store, prompts, ai, context, similarity, types
 src/data/           curriculum.ts, seed.ts
 docs/PLAN.md        bu belge
 supabase/schema.sql Faz 2 şeması
 ```
 
-## 11. Kullanıcı kararı gerekenler
-1. **Claude API anahtarı** (`ANTHROPIC_API_KEY`) — üretim için zorunlu. Anahtar olmadan arayüz örnek sorularla çalışır.
-2. **Görsel servisi** — seçenekler: Google Gemini görsel modeli, OpenAI görsel modeli, ya da şimdilik yalnızca prompt + manuel yükleme. Önerim: önce SVG + prompt ile başlayıp 1 hafta içinde hangi tür görsellerin dış servise ihtiyaç duyduğunu görmek.
-3. **Supabase** — çoklu cihaz/kişi kullanımı istenirse proje açılacak.
-4. Hangi derslerle başlanacağı — önerim: LGS Matematik + TYT Matematik (yeni nesil sorunun en yoğun olduğu alan), ardından Fen ve Türkçe.
+## 11. Alınan kararlar
+1. **Üretim:** API yerine kullanıcının sohbet aracı kotası (Claude / ChatGPT / Gemini) — kopyala-yapıştır modu. API modu kodda hazır, anahtar eklenirse açılır.
+2. **Görsel servisi:** ChatGPT (günlük kota). Veri taşıyan figürlerde SVG yedek/öncelik.
+3. **Supabase:** çoklu cihaz/kişi kullanımı istenirse açılacak.
+4. Başlangıç dersleri önerisi: LGS Matematik + TYT Matematik, ardından Fen ve Türkçe.
 
 ## 12. Yol haritası
 
 | Faz | Kapsam |
 |---|---|
-| **Faz 1 (bu PR)** | Plan, arayüz, havuz, filtreler, soru sayfası, Olmuş/Olmamış + revize/kaldır akışı, revizyon geçmişi, Claude ile üretim (soru + görsel prompt + SVG), benzerlik uyarısı, günlük hedef panosu, deneme kitapçığı + cevap anahtarı yazdırma |
+| **Faz 1 (bu PR)** | Plan, arayüz, havuz, filtreler, soru sayfası, Olmuş/Olmamış + revize/kaldır akışı, revizyon geçmişi, sohbet aracıyla (kopyala-yapıştır) ve API ile üretim (soru + görsel prompt + SVG), ChatGPT görsel akışı, benzerlik uyarısı, günlük hedef panosu, deneme kitapçığı + cevap anahtarı yazdırma |
 | Faz 2 | Supabase'e geçiş, görsel servisi entegrasyonu, görsel yükleme depolama, bağımsız çözüm doğrulaması, tam MEB kazanım listesi, toplu gece üretimi |
 | Faz 3 | Çok kullanıcı (editör/onaylayıcı rolleri), A/B kitapçık, Word çıktısı, embedding benzerlik, öğrenci deneme sonuç analizi |

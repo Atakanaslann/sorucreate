@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import clsx from "clsx";
 import {
-  ArrowLeft, Check, Copy, Download, Eye, EyeOff, History, ImagePlus, Loader2, RotateCcw, Sparkles, ThumbsDown, ThumbsUp, Trash2, AlertTriangle, Plus,
+  ArrowLeft, Check, ExternalLink, MessagesSquare, Copy, Download, Eye, EyeOff, History, ImagePlus, Loader2, RotateCcw, Sparkles, ThumbsDown, ThumbsUp, Trash2, AlertTriangle, Plus,
 } from "lucide-react";
 import type { Soru, OlmamisNedeni } from "@/lib/types";
 import { OLMAMIS_NEDENLERI } from "@/lib/types";
@@ -12,6 +12,7 @@ import { QuestionBody, Rich } from "./QuestionBody";
 import { DurumBadge, TurBadge, ZorlukBadge } from "./Badges";
 import { svgDataUri } from "./QuestionFigure";
 import { useDeneme } from "./useDeneme";
+import { ChatHandoff } from "./ChatHandoff";
 
 function CopyBtn({ text, label = "Kopyala" }: { text: string; label?: string }) {
   const [ok, setOk] = useState(false);
@@ -39,6 +40,24 @@ export function QuestionDetail({ soru, benzerler, ai }: { soru: Soru; benzerler:
   const [busy, setBusy] = useState<string | null>(null);
   const [mesaj, setMesaj] = useState<{ tur: "ok" | "uyari"; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [revPrompt, setRevPrompt] = useState<string | null>(null);
+
+  const manuelRevizyonAc = async () => {
+    const r = await patch({ action: "revizyon_prompt" }, "rp");
+    if (r.ok) setRevPrompt(r.data.prompt);
+  };
+  const manuelRevizyonAktar = async (metin: string, arac: string) => {
+    const res = await fetch(`/api/questions/${soru.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "revizyon_yapistir", metin, kaynakArac: arac }) });
+    const data = await res.json();
+    if (!res.ok) return data.error ?? "İçe aktarılamadı";
+    setRevPrompt(null);
+    setMesaj({ tur: "ok", text: `Soru revize edildi (sürüm ${data.soru.surum}). Tekrar onayınızı bekliyor.` });
+    router.refresh();
+    return null;
+  };
+  const gorselPromptu = soru.gorsel
+    ? `${soru.gorsel.prompt}\n\nAspect ratio 16:9, white background.${soru.gorsel.zorunluOgeler.length ? `\nThe image must show exactly these labels/numbers, clearly legible and spelled exactly (Turkish): ${soru.gorsel.zorunluOgeler.map((o) => `"${o}"`).join(", ")}. No other text.` : "\nNo text in the image."}\nAvoid: ${soru.gorsel.negatifPrompt}`
+    : "";
 
   async function patch(body: object, key: string) {
     setBusy(key);
@@ -65,7 +84,8 @@ export function QuestionDetail({ soru, benzerler, ai }: { soru: Soru; benzerler:
       setPanel(false);
       setNedenler([]);
       setNot("");
-      if (!r.data.uyari) setMesaj({ tur: "ok", text: aksiyon === "kaldir" ? "Soru kaldırıldı. Arşivden geri alınabilir." : `Soru revize edildi (sürüm ${r.data.soru.surum}). Tekrar onayınızı bekliyor.` });
+      if (r.data.manuel) await manuelRevizyonAc();
+      else if (!r.data.uyari) setMesaj({ tur: "ok", text: aksiyon === "kaldir" ? "Soru kaldırıldı. Arşivden geri alınabilir." : `Soru revize edildi (sürüm ${r.data.soru.surum}). Tekrar onayınızı bekliyor.` });
     }
   };
 
@@ -113,6 +133,10 @@ export function QuestionDetail({ soru, benzerler, ai }: { soru: Soru; benzerler:
             </div>
           )}
 
+          {revPrompt && (
+            <ChatHandoff prompt={revPrompt} baslik="Sohbet aracıyla revize et" dugmeMetni="Revizyonu kaydet" onImport={manuelRevizyonAktar} />
+          )}
+
           {cevap && (
             <section className="card space-y-5 p-6 sm:p-8">
               <div>
@@ -138,6 +162,8 @@ export function QuestionDetail({ soru, benzerler, ai }: { soru: Soru; benzerler:
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h3 className="font-display text-xl">Görsel brifi</h3>
                 <div className="flex flex-wrap gap-2">
+                  <CopyBtn text={gorselPromptu} label="ChatGPT promptu" />
+                  <a className="btn !h-8 !px-3 text-xs" href="https://chatgpt.com/" target="_blank" rel="noreferrer"><ExternalLink size={14} /> ChatGPT</a>
                   {soru.gorsel.svg && (
                     <a className="btn !h-8 !px-3 text-xs" href={svgDataUri(soru.gorsel.svg)} download={`${soru.id}.svg`}><Download size={14} /> SVG</a>
                   )}
@@ -151,6 +177,7 @@ export function QuestionDetail({ soru, benzerler, ai }: { soru: Soru; benzerler:
                 </div>
               </div>
               <div>
+                <p className="mb-4 rounded-xl bg-blue-soft p-3 text-xs leading-relaxed text-blue">ChatGPT ile görsel: “ChatGPT promptu”nu kopyala → ChatGPT&apos;de yapıştır → çıkan görseli indir → “Görsel yükle”. Sayıların görselde birebir doğru çıktığını kontrol et; bozuksa SVG kullanılmaya devam eder.</p>
                 <p className="label mb-2">Sahne tarifi</p>
                 <p className="text-sm leading-relaxed text-ink-2">{soru.gorsel.aciklama}</p>
               </div>
@@ -182,7 +209,7 @@ export function QuestionDetail({ soru, benzerler, ai }: { soru: Soru; benzerler:
               <dt className="text-muted">Kazanım</dt><dd><span className="font-mono text-xs font-semibold">{soru.kazanimKodu}</span><span className="mt-1 block text-ink-2">{soru.kazanimMetni}</span></dd>
               <dt className="text-muted">Beceri</dt><dd>{soru.beceri}</dd>
               <dt className="text-muted">Sürüm</dt><dd>v{soru.surum}</dd>
-              <dt className="text-muted">Kaynak</dt><dd>{soru.meta.kaynak === "claude" ? `Claude (${soru.meta.model})` : soru.meta.kaynak === "ornek" ? "Örnek soru" : "Manuel"}</dd>
+              <dt className="text-muted">Kaynak</dt><dd>{soru.meta.kaynak === "claude" ? `Claude (${soru.meta.model})` : soru.meta.kaynak === "ornek" ? "Örnek soru" : `Sohbet aracı (${soru.meta.model ?? "manuel"})`}</dd>
             </dl>
             <div className="mt-4 flex flex-wrap gap-1.5"><ZorlukBadge zorluk={soru.zorluk} /><TurBadge tur={soru.tur} /></div>
           </section>
@@ -215,7 +242,7 @@ export function QuestionDetail({ soru, benzerler, ai }: { soru: Soru; benzerler:
                       <span className="font-semibold">v{r.surum}</span>
                       <button className="text-xs font-semibold text-blue hover:underline" onClick={() => patch({ action: "surum", surum: r.surum }, "surum")}>Geri yükle</button>
                     </div>
-                    <p className="mt-1 line-clamp-2 text-ink-2">{r.kok}</p>
+                    <p className="mt-1 line-clamp-2 text-ink-2"><Rich text={r.kok} /></p>
                     {r.neden && <p className="mt-1 text-xs text-muted">Neden: {r.neden}</p>}
                   </li>
                 ))}
@@ -270,7 +297,7 @@ export function QuestionDetail({ soru, benzerler, ai }: { soru: Soru; benzerler:
                   {busy === "kaldir" ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />} Kaldır
                 </button>
                 <button className="btn btn-primary" disabled={!!busy || nedenler.length + not.trim().length === 0} onClick={() => olmamis("revize")}>
-                  {busy === "revize" ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />} {ai ? "Revize et" : "Revizyona gönder"}
+                  {busy === "revize" ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />} Revize et
                 </button>
               </div>
             </div>
@@ -284,11 +311,15 @@ export function QuestionDetail({ soru, benzerler, ai }: { soru: Soru; benzerler:
                 <button className="btn" disabled={!!busy} onClick={() => patch({ action: "geri_al" }, "geri")}><RotateCcw size={16} /> Geri al</button>
               ) : (
                 <>
-                  {soru.durum === "revizyonda" && ai && (
+                  {soru.durum === "revizyonda" && (ai ? (
                     <button className="btn" disabled={!!busy} onClick={() => patch({ action: "ai_revize" }, "ai")}>
                       {busy === "ai" ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />} AI ile revize et
                     </button>
-                  )}
+                  ) : (
+                    <button className="btn" disabled={!!busy} onClick={manuelRevizyonAc}>
+                      {busy === "rp" ? <Loader2 size={16} className="animate-spin" /> : <MessagesSquare size={16} />} Sohbet aracıyla revize et
+                    </button>
+                  ))}
                   <button className="btn btn-bad min-w-28" disabled={!!busy} onClick={() => setPanel((p) => !p)}><ThumbsDown size={16} /> Olmamış</button>
                   <button className="btn btn-ok min-w-28" disabled={!!busy || soru.durum === "onaylandi"} onClick={olmus}>
                     {busy === "olmus" ? <Loader2 size={16} className="animate-spin" /> : <ThumbsUp size={16} />} Olmuş

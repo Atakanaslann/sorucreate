@@ -2,11 +2,12 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import clsx from "clsx";
-import { AlertTriangle, ArrowRight, ImageIcon, Loader2, Sparkles, Type } from "lucide-react";
+import { AlertTriangle, ArrowRight, ImageIcon, Loader2, MessagesSquare, Sparkles, Type, Zap } from "lucide-react";
 import { MUFREDAT } from "@/data/curriculum";
 import { GUNLUK_HEDEF, SINAVLAR } from "@/lib/types";
 import type { Sinav, Soru, SoruTuru, Zorluk } from "@/lib/types";
 import { QuestionBody } from "./QuestionBody";
+import { ChatHandoff } from "./ChatHandoff";
 
 const TEMALAR = [
   "Üst üste dizilmiş karton bardaklar",
@@ -33,6 +34,8 @@ function Segment<T extends string>({ value, onChange, options }: { value: T; onC
   );
 }
 
+type Govde = { sinav: Sinav; ders: string; kazanimKodu: string; zorluk: Zorluk; tur: SoruTuru; adet: number; tema?: string };
+
 interface Sonuc { soru: Soru; benzerler: { id: string; skor: number }[] }
 
 export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: number; gorselsiz: number } }) {
@@ -47,6 +50,10 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
   const [busy, setBusy] = useState(false);
   const [hata, setHata] = useState<string | null>(null);
   const [sonuclar, setSonuclar] = useState<Sonuc[]>([]);
+  const [mod, setMod] = useState<"sohbet" | "api">(ai ? "api" : "sohbet");
+  const [prompt, setPrompt] = useState<string | null>(null);
+  const [promptGovde, setPromptGovde] = useState<Govde | null>(null);
+  const govde = (): Govde => ({ sinav, ders, kazanimKodu: kazanim, zorluk, tur, adet, tema: tema || undefined });
 
   const dersler = MUFREDAT[sinav];
   const uniteler = useMemo(() => dersler.find((d) => d.ad === ders)?.uniteler ?? [], [dersler, ders]);
@@ -68,10 +75,34 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
     setKazanim(uniteler.find((u) => u.ad === n)!.kazanimlar[0].kod);
   };
 
-  async function uret() {
+  async function promptHazirla() {
     setBusy(true); setHata(null);
     try {
-      const res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sinav, ders, kazanimKodu: kazanim, zorluk, tur, adet, tema: tema || undefined }) });
+      const res = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...govde(), asama: "prompt" }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Prompt hazırlanamadı");
+      setPrompt(data.prompt);
+      setPromptGovde(govde());
+    } catch (e) {
+      setHata((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function iceAktar(metin: string, arac: string) {
+    const res = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...(promptGovde ?? govde()), asama: "ice-aktar", metin, kaynakArac: arac }) });
+    const data = await res.json();
+    if (!res.ok) return data.error ?? "İçe aktarılamadı";
+    setSonuclar((p) => [...data.sorular, ...p]);
+    return null;
+  }
+
+  async function uret() {
+    if (mod === "sohbet") return promptHazirla();
+    setBusy(true); setHata(null);
+    try {
+      const res = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(govde()) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Üretim başarısız");
       setSonuclar((p) => [...data.sorular, ...p]);
@@ -92,23 +123,28 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
         <p className="label">Soru üret</p>
         <h1 className="mt-2 font-display text-4xl tracking-tight">Kazanımdan soruya</h1>
         <p className="mt-2 max-w-2xl text-ink-2">
-          Claude, seçtiğin kazanıma göre soruyu, adım adım çözümü, çeldirici gerekçelerini ve yeni nesil sorularda görsel promptunu + kesin ölçülü SVG figürü birlikte hazırlar.
+          Seçtiğin kazanıma göre yapay zekâ soruyu, adım adım çözümü, çeldirici gerekçelerini ve yeni nesil sorularda görsel promptunu + kesin ölçülü SVG figürü birlikte hazırlar.
           Bugün kalan: <strong>{kalanG}</strong> görselli, <strong>{kalanM}</strong> görselsiz.
         </p>
       </header>
 
-      {!ai && (
+      {!ai && mod === "api" && (
         <div className="card flex items-start gap-3 !border-[#f0d2a8] !bg-gold-soft p-5 text-sm text-[#7a5512]">
           <AlertTriangle size={18} className="mt-0.5 shrink-0" />
           <div>
             <strong>Claude API anahtarı tanımlı değil.</strong> Proje kökünde <code className="font-mono">.env.local</code> dosyasına
-            <code className="mx-1 rounded bg-white/70 px-1.5 py-0.5 font-mono">ANTHROPIC_API_KEY=...</code> ekleyip sunucuyu yeniden başlatın. O zamana kadar havuzdaki örnek sorularla akışı deneyebilirsiniz.
+            <code className="mx-1 rounded bg-white/70 px-1.5 py-0.5 font-mono">ANTHROPIC_API_KEY=...</code> ekleyip sunucuyu yeniden başlatın. Ya da “Sohbet aracıyla” moduna geçip Claude / ChatGPT / Gemini aboneliğinizle üretin.
           </div>
         </div>
       )}
 
       <div className="grid gap-6 lg:grid-cols-[400px_minmax(0,1fr)]">
         <form className="card h-fit space-y-5 p-6" onSubmit={(e) => { e.preventDefault(); uret(); }}>
+          <div className="space-y-2">
+            <p className="label">Üretim yolu</p>
+            <Segment value={mod} onChange={(m) => { setMod(m); setPrompt(null); }} options={[{ v: "sohbet", label: <><MessagesSquare size={15} /> Sohbet aracıyla</> }, { v: "api", label: <><Zap size={15} /> API ile</> }]} />
+            <p className="text-xs text-muted">{mod === "sohbet" ? "API anahtarı gerekmez: prompt kopyalanır, Claude.ai / ChatGPT / Gemini yanıtı geri yapıştırılır." : "Tek tıkla otomatik üretim; ANTHROPIC_API_KEY gerekir."}</p>
+          </div>
           <div className="space-y-2">
             <p className="label">Sınav</p>
             <Segment value={sinav} onChange={chSinav} options={SINAVLAR.map((s) => ({ v: s, label: s }))} />
@@ -147,18 +183,21 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
           </div>
           <div className="flex items-end gap-3">
             <label className="w-24 space-y-2"><span className="label">Adet</span>
-              <select className="field" value={adet} onChange={(e) => setAdet(Number(e.target.value))}>{[1, 2, 3, 4, 5].map((n) => <option key={n}>{n}</option>)}</select>
+              <select className="field" value={adet} onChange={(e) => setAdet(Number(e.target.value))}>{(mod === "sohbet" ? [1, 2, 3, 5, 10] : [1, 2, 3, 4, 5]).map((n) => <option key={n}>{n}</option>)}</select>
             </label>
-            <button className="btn btn-primary flex-1" disabled={busy || !ai}>
-              {busy ? <><Loader2 size={16} className="animate-spin" /> Üretiliyor…</> : <><Sparkles size={16} /> Üret</>}
+            <button className="btn btn-primary flex-1" disabled={busy || (mod === "api" && !ai)}>
+              {busy ? <><Loader2 size={16} className="animate-spin" /> {mod === "api" ? "Üretiliyor…" : "Hazırlanıyor…"}</> : mod === "api" ? <><Sparkles size={16} /> Üret</> : <><MessagesSquare size={16} /> Promptu hazırla</>}
             </button>
           </div>
-          {busy && <p className="text-xs text-muted">Her soru bağımsız olarak yazılıp kendi içinde çözülür; soru başına 30–90 sn sürebilir.</p>}
+          {busy && mod === "api" && <p className="text-xs text-muted">Her soru bağımsız olarak yazılıp kendi içinde çözülür; soru başına 30–90 sn sürebilir.</p>}
         </form>
 
         <div className="space-y-5">
           {hata && <div className="card flex items-start gap-3 !border-[#efc7c3] !bg-bad-soft p-4 text-sm text-bad"><AlertTriangle size={18} /> {hata}</div>}
-          {sonuclar.length === 0 && !busy && (
+          {mod === "sohbet" && prompt && (
+            <ChatHandoff prompt={prompt} baslik={`${promptGovde?.adet ?? adet} soru · ${promptGovde?.kazanimKodu ?? kazanim}`} onImport={iceAktar} />
+          )}
+          {sonuclar.length === 0 && !busy && !(mod === "sohbet" && prompt) && (
             <div className="card grid min-h-80 place-items-center p-10 text-center">
               <div>
                 <Sparkles className="mx-auto text-gold" />
@@ -167,7 +206,7 @@ export function Generator({ ai, bugun }: { ai: boolean; bugun: { gorselli: numbe
               </div>
             </div>
           )}
-          {busy && Array.from({ length: adet }).map((_, i) => (
+          {busy && mod === "api" && Array.from({ length: adet }).map((_, i) => (
             <div key={i} className="card animate-pulse space-y-3 p-6"><div className="h-3 w-1/3 rounded bg-line" /><div className="h-3 w-full rounded bg-line" /><div className="h-3 w-5/6 rounded bg-line" /><div className="h-40 rounded-xl bg-paper" /></div>
           ))}
           {sonuclar.map(({ soru, benzerler }) => (

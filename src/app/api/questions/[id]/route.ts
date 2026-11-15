@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { addFeedback, getQuestion, restoreRevision, reviseQuestion, setImage, setStatus, similarTo } from "@/lib/store";
 import { aiHazir, soruRevizeEt, MODEL } from "@/lib/ai";
+import { manuelRevizyonPromptu, normalizeCikti, yapistirilaniAyristir } from "@/lib/prompts";
+import { OLMAMIS_NEDENLERI } from "@/lib/types";
 import type { OlmamisNedeni } from "@/lib/types";
+
+const etiket = (ns: OlmamisNedeni[] = []) => ns.map((n) => OLMAMIS_NEDENLERI.find((x) => x.key === n)?.label ?? n);
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -18,7 +22,9 @@ type Body =
   | { action: "geri_al" }
   | { action: "ai_revize" }
   | { action: "surum"; surum: number }
-  | { action: "gorsel"; url?: string };
+  | { action: "gorsel"; url?: string }
+  | { action: "revizyon_prompt" }
+  | { action: "revizyon_yapistir"; metin: string; kaynakArac?: string };
 
 export async function PATCH(req: Request, { params }: Ctx) {
   const { id } = await params;
@@ -38,6 +44,21 @@ export async function PATCH(req: Request, { params }: Ctx) {
       const son = [...s.geribildirim].reverse().find((g) => g.karar === "olmamis");
       return revize(id, son?.nedenler ?? [], son?.not);
     }
+    case "revizyon_prompt": {
+      const son = [...s.geribildirim].reverse().find((g) => g.karar === "olmamis");
+      return NextResponse.json({ prompt: manuelRevizyonPromptu(s, son?.nedenler ?? [], son?.not) });
+    }
+    case "revizyon_yapistir": {
+      try {
+        const [ilk] = yapistirilaniAyristir(body.metin ?? "");
+        if (!ilk) throw new Error("Yanıtta soru bulunamadı.");
+        const son = [...s.geribildirim].reverse().find((g) => g.karar === "olmamis");
+        const soru = await reviseQuestion(id, normalizeCikti(ilk, s.sinav, s.tur), [...etiket(son?.nedenler), son?.not].filter(Boolean).join(" · ") || "Manuel revizyon", body.kaynakArac || "sohbet aracı");
+        return NextResponse.json({ soru, benzerler: await similarTo(id) });
+      } catch (e) {
+        return NextResponse.json({ error: (e as Error).message }, { status: 422 });
+      }
+    }
     case "geri_al":
       return NextResponse.json({ soru: await setStatus(id, "taslak") });
     case "surum":
@@ -51,15 +72,12 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
 async function revize(id: string, nedenler: OlmamisNedeni[], not?: string) {
   if (!aiHazir()) {
-    return NextResponse.json({
-      soru: await getQuestion(id),
-      uyari: "ANTHROPIC_API_KEY tanımlı değil; soru 'Revizyonda' olarak işaretlendi. Anahtar eklendiğinde 'AI ile revize et' ile yeniden deneyin.",
-    });
+    return NextResponse.json({ soru: await getQuestion(id), manuel: true });
   }
   try {
     const cur = await getQuestion(id);
     const icerik = await soruRevizeEt(cur!, nedenler, not);
-    const soru = await reviseQuestion(id, icerik, [...nedenler, not].filter(Boolean).join(" · "), MODEL);
+    const soru = await reviseQuestion(id, icerik, [...etiket(nedenler), not].filter(Boolean).join(" · "), MODEL);
     return NextResponse.json({ soru, benzerler: await similarTo(id) });
   } catch (e) {
     return NextResponse.json({ soru: await getQuestion(id), uyari: `Revizyon başarısız: ${(e as Error).message}` });

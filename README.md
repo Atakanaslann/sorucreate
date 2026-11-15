@@ -8,11 +8,13 @@ Ayrıntılı plan: [docs/PLAN.md](docs/PLAN.md)
 
 ```bash
 npm install
-cp .env.example .env.local   # ANTHROPIC_API_KEY değerini doldurun
+cp .env.example .env.local   # (isteğe bağlı) ANTHROPIC_API_KEY
 npm run dev                  # http://localhost:3000
 ```
 
-API anahtarı olmadan da arayüz örnek sorularla çalışır; yalnızca “Üret” ve “AI ile revize et” devre dışı kalır.
+**API anahtarı gerekmez.** Üret ekranında “Sohbet aracıyla” modu, Claude.ai / ChatGPT / Gemini'ye yapıştırılacak tam promptu hazırlar; gelen JSON yanıtı geri yapıştırınca sorular doğrulanıp havuza eklenir. Revizyon da aynı yolla yapılır. `ANTHROPIC_API_KEY` eklenirse “API ile” modu tek tıkla üretir.
+
+Görseller: soru sayfasındaki “ChatGPT promptu” → ChatGPT → indir → “Görsel yükle”. Veri taşıyan figürler için SVG her zaman hazırdır.
 
 ## Sayfalar
 
